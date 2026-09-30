@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <title>Training</title>
 <style>
-  :root {
+  :root { color-scheme: dark;
     --bg: #0F1115; --card: #1A1D24; --line: #2A2E38; --white: #FFFFFF; --grey: #8A90A0; --dim: #555B68;
     --blue: #4F8CFF; --green: #3DDC84; --orange: #FFB454; --red: #FF6B6B; --purple: #C38CFF;
   }
@@ -65,7 +65,6 @@
     background: #333845; color: #fff; padding: 10px 16px; border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity .2s;
     pointer-events: none; z-index: 20; max-width: 90vw; text-align: center; }
   #toast.on { opacity: 1; }
-  .datepick { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -344,13 +343,14 @@ function nameSheet(title, initial, onOk) {
   openSheet({ title, body: inp, buttons: [["Cancel", null], ["OK", ok, true]] });
   setTimeout(() => inp.focus(), 50);
 }
-function pickDate(initial, onPick) {
-  const inp = h("input", { type: "date", class: "datepick", value: initial });
-  document.body.append(inp);
-  inp.addEventListener("change", () => { if (inp.value) onPick(inp.value); inp.remove(); });
-  inp.addEventListener("blur", () => setTimeout(() => inp.remove(), 500));
-  if (inp.showPicker) { try { inp.showPicker(); return; } catch (_) {} }
-  inp.focus(); inp.click();
+/** Visible date field in a sheet – hidden pickers don't open reliably on iPhone. */
+function pickDate(initial, onPick, title) {
+  const inp = h("input", { type: "date", value: initial, max: today(), style: "min-height:48px" });
+  openSheet({ title: title || "Choose date", body: inp,
+    buttons: [["Cancel", null], ["OK", () => {
+      if (!inp.value) { toast("Please choose a date"); return false; }
+      onPick(inp.value);
+    }, true]] });
 }
 
 // ================= Shell =================
@@ -422,7 +422,7 @@ function startView(box) {
     const t = S.schedule[dowOf(parseD(pd)) - 1] || "Free";
     const w = newWorkout(pd, t);
     openId = w.id; saveSoon(); render();
-  })));
+  }, "Which day did you train?")));
 }
 
 function workoutView(box, w) {
@@ -657,7 +657,7 @@ function changeDate(w) {
       w.e = planNames(w.type, dowOf(parseD(nd))).map(n => ({ n, done: false, b: [] }));
     }
     saveSoon(); render();
-  });
+  }, "Change date");
 }
 
 function changeType(w) {
