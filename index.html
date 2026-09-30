@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Training">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Training</title>
+<style>
+  :root {
+    --bg: #0F1115; --card: #1A1D24; --line: #2A2E38; --white: #FFFFFF; --grey: #8A90A0; --dim: #555B68;
+    --blue: #4F8CFF; --green: #3DDC84; --orange: #FFB454; --red: #FF6B6B; --purple: #C38CFF;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--white);
+    font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; overscroll-behavior-y: none; }
+  #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .box { padding: calc(20px + env(safe-area-inset-top)) 16px 40px; max-width: 640px; margin: 0 auto; }
+  #tabs { display: flex; border-top: 1px solid var(--line); background: var(--bg); padding-bottom: env(safe-area-inset-bottom); }
+  #tabs div { flex: 1; text-align: center; padding: 14px 0; font-size: 15px; color: var(--grey); cursor: pointer; user-select: none; }
+  #tabs div.on { color: var(--white); font-weight: 700; }
+  h1 { font-size: 24px; margin: 0; font-weight: 700; }
+  .h22 { font-size: 22px; font-weight: 700; }
+  .card { background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .row { display: flex; align-items: center; }
+  .grow { flex: 1; min-width: 0; }
+  .grey { color: var(--grey); } .dim { color: var(--dim); } .orange { color: var(--orange); } .green { color: var(--green); }
+  .b { font-weight: 700; }
+  .s11 { font-size: 11px; } .s12 { font-size: 12px; } .s13 { font-size: 13px; } .s14 { font-size: 14px; } .s15 { font-size: 15px; } .s17 { font-size: 17px; } .s18 { font-size: 18px; }
+  .pre { white-space: pre-line; }
+  .btn { display: block; text-align: center; color: #fff; font-weight: 700; font-size: 15px; border-radius: 12px;
+    padding: 11px 16px; cursor: pointer; user-select: none; border: 0; }
+  .btn.big { font-size: 17px; padding: 16px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { font-size: 14px; font-weight: 700; padding: 7px 14px; border-radius: 20px; border: 1px solid var(--line);
+    white-space: nowrap; cursor: pointer; user-select: none; flex: none; }
+  .icon { font-size: 20px; color: var(--grey); padding: 4px 10px; cursor: pointer; user-select: none; }
+  input, textarea { font: inherit; font-size: 17px; color: var(--white); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; width: 100%; outline: none; -webkit-appearance: none; }
+  input::placeholder, textarea::placeholder { color: var(--dim); }
+  input:focus, textarea:focus { border-color: var(--blue); }
+  textarea { resize: vertical; min-height: 44px; }
+  .sp6 { height: 6px; } .sp8 { height: 8px; } .sp12 { height: 12px; } .sp14 { height: 14px; }
+  .link { cursor: pointer; }
+  /* Sheet / dialog */
+  #ov { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  #ov.on { display: flex; }
+  #sheet { background: var(--card); width: 100%; max-width: 640px; max-height: 85vh; overflow-y: auto; border-radius: 18px 18px 0 0;
+    padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); }
+  #sheet .title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  #sheet .msg { color: var(--grey); font-size: 14px; margin-bottom: 10px; }
+  #sheet .item { padding: 13px 2px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 16px; }
+  #sheet .item:last-child { border-bottom: 0; }
+  .btns { display: flex; gap: 8px; margin-top: 14px; }
+  .btns .btn { flex: 1; }
+  #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    background: #333845; color: #fff; padding: 10px 16px; border-radius: 20px; font-size: 14px; opacity: 0; transition: opacity .2s;
+    pointer-events: none; z-index: 20; max-width: 90vw; text-align: center; }
+  #toast.on { opacity: 1; }
+  .datepick { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="content"></div>
+<nav id="tabs"></nav>
+<div id="ov"><div id="sheet"></div></div>
+<div id="toast"></div>
+<script>
+"use strict";
+
+// ================= Settings =================
+const SB_URL = "https://hnavjodrrufagjtxekcv.supabase.co";
+const SB_KEY = "sb_publishable_yaAGPz7MytzEjxG_6snJCg_s11P7Uuo";
+const LS_DATA = "training-gia-data", LS_CODE = "training-gia-code", LS_STATUS = "training-gia-status";
+
+const TYPES = ["Push", "Pull", "Legs", "Core & Cardio"];
+const C = { bg: "#0F1115", line: "#2A2E38", white: "#FFFFFF", grey: "#8A90A0", dim: "#555B68",
+  blue: "#4F8CFF", green: "#3DDC84", orange: "#FFB454", red: "#FF6B6B", purple: "#C38CFF" };
+const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+// ================= Notation: 20×12 // 80×12 // 120×12 / 10 / 8+1 =================
+const Notation = {
+  fmtW(w) { return Number.isInteger(w) ? String(w) : String(+w.toFixed(2)); },
+  format(blocks) {
+    return blocks.filter(b => b.r.length).map(b => {
+      const r = b.r.join(" / ");
+      return b.w == null ? r : `${Notation.fmtW(b.w)}×${r}`;
+    }).join(" // ");
+  },
+  head: /^([0-9]+(?:[.,][0-9]+)?)\s*[×xX*@áàaA]\s*(.*)$/,
+  repRx: /^[0-9]+(\+[0-9]+)*$/,
+  /** Reads the notation. Returns null if something can't be read. */
+  parse(s) {
+    const out = [];
+    for (const part of s.split("//")) {
+      const items = part.split("/").map(x => x.replace(/\s/g, "")).filter(x => x);
+      if (!items.length) continue;
+      const m = Notation.head.exec(items[0]);
+      let b;
+      if (m) { b = { w: parseFloat(m[1].replace(",", ".")), r: [] }; if (m[2]) b.r.push(m[2]); }
+      else { b = { w: null, r: [items[0]] }; }
+      items.slice(1).forEach(x => b.r.push(x));
+      if (!b.r.length || b.r.some(x => !Notation.repRx.test(x))) return null;
+      out.push(b);
+    }
+    return out;
+  },
+  /** All sets flat: [weight, reps] */
+  flat(blocks) { return blocks.flatMap(b => b.r.map(r => [b.w, r])); },
+};
+
+// ================= Data =================
+let S; // { v, schedule[7], plans{type:[{n,d[]}]}, workouts[{id,date,type,note,created,e[{n,done,b[{w,r[]}]}]}] }
+
+function defaults() {
+  return {
+    v: 1,
+    // Index 0 = Monday; "" = rest day
+    schedule: ["", "Legs", "Push", "Pull", "Legs", "Core & Cardio", ""],
+    plans: { "Push": [], "Pull": [], "Legs": [], "Core & Cardio": [] },
+    workouts: [],
+  };
+}
+
+function valid(o) {
+  return o && Array.isArray(o.workouts) && o.plans && typeof o.plans === "object" && Array.isArray(o.schedule);
+}
+
+function normalize(o) {
+  for (const w of o.workouts) {
+    w.type = w.type || "Free"; w.note = w.note || ""; w.created = w.created || 0; w.e = w.e || [];
+    for (const e of w.e) { e.done = !!e.done; e.b = (e.b || []).map(b => ({ w: b.w == null ? null : +b.w, r: (b.r || []).map(String) })); }
+  }
+  for (const t of Object.keys(o.plans)) o.plans[t] = o.plans[t].map(p => ({ n: p.n, d: p.d || [] }));
+  for (const t of TYPES) if (!o.plans[t]) o.plans[t] = [];
+  while (o.schedule.length < 7) o.schedule.push("");
+  o.v = 1;
+  return o;
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(LS_DATA);
+    if (raw) { const o = JSON.parse(raw); if (valid(o)) return normalize(o); }
+  } catch (e) {
+    try { localStorage.setItem("training-gia-broken-" + Date.now(), localStorage.getItem(LS_DATA)); } catch (_) {}
+  }
+  return defaults();
+}
+
+function saveNow() {
+  try { localStorage.setItem(LS_DATA, JSON.stringify(S)); } catch (e) { toast("Could not save on this device"); }
+}
+let saveT = null;
+function saveSoon() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => { saveNow(); uploadSoon(); }, 400);
+}
+
+// ---------- Queries ----------
+const byId = id => S.workouts.find(w => w.id === id);
+function sorted() {
+  return [...S.workouts].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : b.created - a.created);
+}
+const latestOn = date => sorted().find(w => w.date === date);
+function planNames(type, dow) {
+  return (S.plans[type] || []).filter(p => !p.d.length || p.d.includes(dow)).map(p => p.n);
+}
+function older(a, cur) {
+  return !cur || (a.id !== cur.id && (a.date < cur.date || (a.date === cur.date && a.created < cur.created)));
+}
+const same = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Latest entries of this exercise before workout cur (cur = null: overall). */
+function history(name, cur, limit) {
+  const out = [];
+  for (const w of sorted()) {
+    if (!older(w, cur)) continue;
+    const e = w.e.find(x => same(x.n, name) && x.b.some(b => b.r.length));
+    if (!e) continue;
+    out.push([w, e]);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+const last = (name, cur) => history(name, cur, 1)[0] || null;
+
+const mainReps = r => parseInt(r.split("+")[0]) || 0;
+const allReps = r => r.split("+").reduce((s, x) => s + (parseInt(x) || 0), 0);
+
+/** Strongest session: heaviest weight, then most reps in the best set at that weight, then total reps at that weight.
+ *  Returns [workout, blocks from the heaviest on]. */
+function best(name, cur) {
+  let bestW = null, bestBlocks = [], bestKey = [];
+  for (const [w, e] of history(name, cur, Infinity)) {
+    const blocks = e.b.filter(b => b.r.length);
+    if (!blocks.length) continue;
+    const ws = blocks.map(b => b.w).filter(x => x != null);
+    let key, shown;
+    if (ws.length) {
+      const maxW = Math.max(...ws);
+      const reps = blocks.filter(b => b.w === maxW).flatMap(b => b.r);
+      key = [1, maxW, Math.max(...reps.map(mainReps)), reps.reduce((s, r) => s + allReps(r), 0)];
+      shown = blocks.slice(blocks.findIndex(b => b.w === maxW));
+    } else {
+      const reps = blocks.flatMap(b => b.r);
+      key = [0, 0, Math.max(...reps.map(mainReps)), reps.reduce((s, r) => s + allReps(r), 0)];
+      shown = blocks;
+    }
+    // history is newest first -> on a tie the newer one stays
+    if (!bestW || cmpKeys(key, bestKey) > 0) { bestW = w; bestBlocks = shown; bestKey = key; }
+  }
+  return bestW ? [bestW, bestBlocks] : null;
+}
+function cmpKeys(a, b) { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1; return 0; }
+
+function knownNames() {
+  const m = new Map();
+  Object.values(S.plans).flat().forEach(p => { if (!m.has(p.n.toLowerCase())) m.set(p.n.toLowerCase(), p.n); });
+  S.workouts.forEach(w => w.e.forEach(e => { const k = e.n.trim().toLowerCase(); if (!m.has(k)) m.set(k, e.n.trim()); }));
+  return [...m.values()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
+// ================= Cloud backup (Supabase, own tables for this app) =================
+let code = localStorage.getItem(LS_CODE);
+function newCode() {
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const a = new Uint32Array(20); crypto.getRandomValues(a);
+  const s = [...a].map(x => abc[x % abc.length]).join("");
+  return s.match(/.{4}/g).join("-");
+}
+const normCode = s => (s.toUpperCase().replace(/[^A-Z0-9]/g, "").match(/.{1,4}/g) || []).join("-");
+if (!code) { code = newCode(); localStorage.setItem(LS_CODE, code); }
+
+let cloudStatus = localStorage.getItem(LS_STATUS) || "Not backed up yet";
+let cloudOk = false, dirty = true, upT = null;
+
+async function rpc(fn, body, keepalive) {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST", keepalive: !!keepalive,
+    headers: { "Content-Type": "application/json", "apikey": SB_KEY },
+    body: JSON.stringify(body),
+  });
+  const t = await r.text();
+  if (!r.ok) throw new Error(`Server ${r.status}: ${t.slice(0, 200)}`);
+  return t;
+}
+function uploadSoon() { dirty = true; clearTimeout(upT); upT = setTimeout(upload, 3000); }
+async function upload(keepalive) {
+  if (!dirty) return;
+  dirty = false;
+  const c = code, data = JSON.parse(JSON.stringify(S));
+  try {
+    await rpc("put_training_gia", { p_code: c, p_data: data }, keepalive);
+    cloudOk = true;
+    const n = new Date();
+    cloudStatus = `Backed up today ${pad(n.getHours())}:${pad(n.getMinutes())}`;
+    localStorage.setItem(LS_STATUS, `Last backup ${shortDate(today())} ${pad(n.getHours())}:${pad(n.getMinutes())}`);
+  } catch (e) {
+    dirty = true; cloudOk = false;
+    cloudStatus = "Not backed up (no internet?) – will retry automatically";
+    clearTimeout(upT); upT = setTimeout(upload, 60000);
+  }
+  if (tab === 2) render();
+}
+async function cloudGet(c) {
+  const a = JSON.parse((await rpc("get_training_gia", { p_code: c })) || "[]");
+  return a[0] ? a[0].out_data : null;
+}
+
+// ================= Date helpers =================
+const pad = n => String(n).padStart(2, "0");
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => iso(new Date());
+const parseD = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const dowOf = d => (d.getDay() + 6) % 7 + 1; // 1 = Mon … 7 = Sun
+const longDate = d => `${DAY_LONG[dowOf(d) - 1]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+function shortDate(s) { const d = parseD(s); return `${DAY_SHORT[dowOf(d) - 1]} ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`; }
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+// ================= DOM helpers =================
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "style") el.style.cssText = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "text") el.textContent = v;
+    else el.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return el;
+}
+const txt = (s, cls, style) => h("div", { class: cls, style, text: s });
+const space = n => h("div", { style: `height:${n}px` });
+const button = (label, color, onclick, big) =>
+  h("div", { class: "btn" + (big ? " big" : ""), style: `background:${color}`, onclick }, label);
+const icon = (s, onclick) => h("div", { class: "icon", onclick }, s);
+function chip(label, on, color, onclick) {
+  return h("div", { class: "chip", onclick,
+    style: on ? `background:${color};color:${C.bg};border-color:${color}` : `color:${color}` }, label);
+}
+const typeColor = t => ({ "Push": C.blue, "Pull": C.green, "Legs": C.orange, "Core & Cardio": C.purple })[t] || C.grey;
+const card = (...kids) => h("div", { class: "card" }, ...kids);
+function toast(s) {
+  const t = document.getElementById("toast");
+  t.textContent = s; t.classList.add("on");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 2000);
+}
+function hideKb() { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
+
+// ---------- Sheet (dialogs) ----------
+const ov = document.getElementById("ov"), sheet = document.getElementById("sheet");
+ov.addEventListener("click", e => { if (e.target === ov) closeSheet(); });
+function closeSheet() { ov.classList.remove("on"); sheet.innerHTML = ""; }
+function openSheet({ title, message, body, items, buttons }) {
+  hideKb();
+  sheet.innerHTML = "";
+  if (title) sheet.append(txt(title, "title"));
+  if (message) sheet.append(txt(message, "msg"));
+  if (body) sheet.append(body);
+  if (items) items.forEach(([label, fn]) => sheet.append(h("div", { class: "item", onclick: () => { closeSheet(); fn(); } }, label)));
+  const bs = buttons || (items ? [["Cancel", null]] : [["OK", null]]);
+  sheet.append(h("div", { class: "btns" }, bs.map(([label, fn, primary]) =>
+    button(label, primary ? C.blue : C.line, () => { if (fn && fn() === false) return; closeSheet(); }))));
+  ov.classList.add("on");
+}
+function confirmSheet(msg, onYes) { openSheet({ title: msg, buttons: [["Cancel", null], ["Yes", onYes, true]] }); }
+function nameSheet(title, initial, onOk) {
+  const inp = h("input", { placeholder: "Name", autocapitalize: "words", value: initial });
+  const ok = () => { const v = inp.value.trim(); if (v) onOk(v); };
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { closeSheet(); ok(); } });
+  openSheet({ title, body: inp, buttons: [["Cancel", null], ["OK", ok, true]] });
+  setTimeout(() => inp.focus(), 50);
+}
+function pickDate(initial, onPick) {
+  const inp = h("input", { type: "date", class: "datepick", value: initial });
+  document.body.append(inp);
+  inp.addEventListener("change", () => { if (inp.value) onPick(inp.value); inp.remove(); });
+  inp.addEventListener("blur", () => setTimeout(() => inp.remove(), 500));
+  if (inp.showPicker) { try { inp.showPicker(); return; } catch (_) {} }
+  inp.focus(); inp.click();
+}
+
+// ================= Shell =================
+let tab = 0;           // 0 Workout, 1 History, 2 Plan
+let openId = null, startType = null, histFilter = "All", renderedTab = -1;
+const content = document.getElementById("content"), tabs = document.getElementById("tabs");
+
+function render() {
+  const y = renderedTab === tab ? content.scrollTop : 0;
+  tabs.innerHTML = "";
+  ["Workout", "History", "Plan"].forEach((t, i) =>
+    tabs.append(h("div", { class: i === tab ? "on" : "", onclick: () => { hideKb(); tab = i; render(); } }, t)));
+  content.innerHTML = "";
+  const box = h("div", { class: "box" });
+  content.append(box);
+  if (tab === 0) workoutTab(box); else if (tab === 1) historyTab(box); else planTab(box);
+  renderedTab = tab;
+  content.scrollTop = y;
+}
+
+// ================= Tab: Workout =================
+function workoutTab(box) {
+  const w = openId && byId(openId);
+  if (!w) { openId = null; startView(box); } else workoutView(box, w);
+}
+
+function newWorkout(date, type) {
+  const w = { id: uuid(), date, type, note: "", created: Date.now(), e: [] };
+  if (type !== "Free") planNames(type, dowOf(parseD(date))).forEach(n => w.e.push({ n, done: false, b: [] }));
+  S.workouts.push(w);
+  return w;
+}
+
+function startView(box) {
+  const d = new Date(), dow = dowOf(d);
+  const planned = S.schedule[dow - 1] || "Free";
+  const type = startType || planned;
+
+  box.append(h("h1", {}, longDate(d)));
+  box.append(txt(planned === "Free" ? "Plan: rest day" : `Plan: ${planned}`, "grey s14", "padding:2px 0 14px"));
+  box.append(h("div", { class: "chips" }, [...TYPES, "Free"].map(t => chip(t, t === type, typeColor(t), () => { startType = t; render(); }))));
+
+  const names = type === "Free" ? [] : planNames(type, dow);
+  box.append(space(12));
+  if (!names.length) {
+    box.append(txt(type === "Free"
+      ? "Empty workout – add exercises freely (e.g. at a different gym)."
+      : `No exercises planned for ${type} yet. Add them under Plan – or start and add them freely.`, "grey s14"));
+  } else {
+    for (const n of names) {
+      const l = last(n, null);
+      box.append(card(txt(n, "b"),
+        txt(l ? `${shortDate(l[0].date)}:  ${Notation.format(l[1].b)}` : "No entry yet", (l ? "grey" : "dim") + " s14", "padding-top:3px")));
+    }
+  }
+  box.append(space(12));
+  box.append(button("Start workout", C.blue, () => {
+    const w = newWorkout(iso(d), type);
+    openId = w.id; startType = null; saveSoon(); render();
+  }, true));
+  const todayW = latestOn(iso(d));
+  if (todayW) {
+    box.append(space(8));
+    box.append(button(`Reopen today's workout (${todayW.type})`, C.line, () => { openId = todayW.id; render(); }));
+  }
+  box.append(space(8));
+  const y = new Date(d); y.setDate(y.getDate() - 1);
+  box.append(button("Log a past workout", C.line, () => pickDate(iso(y), pd => {
+    const t = S.schedule[dowOf(parseD(pd)) - 1] || "Free";
+    const w = newWorkout(pd, t);
+    openId = w.id; saveSoon(); render();
+  })));
+}
+
+function workoutView(box, w) {
+  const d = parseD(w.date);
+  box.append(h("div", { class: "row" },
+    h("div", { class: "h22 grow link", onclick: () => changeDate(w) }, longDate(d)),
+    h("div", { class: "grey s14 link", style: "padding:8px 0 8px 12px", onclick: () => { hideKb(); openId = null; render(); } }, "Close")));
+  const sub = h("div", { class: "row", style: "padding:8px 0 10px;gap:4px" }, chip(w.type, true, typeColor(w.type), () => changeType(w)));
+  if (w.date !== today()) sub.append(txt("Logged later", "orange s13", "padding-left:4px"));
+  box.append(sub);
+
+  const done = w.e.filter(e => e.done).length;
+  if (w.e.length) box.append(txt(`${done} of ${w.e.length} done`, "grey s13", "padding-bottom:6px"));
+  w.e.forEach((e, i) => box.append(entryCard(w, e, i)));
+
+  box.append(space(6));
+  box.append(button("+ Add exercise", C.line, () => addExercise(w)));
+  box.append(space(14));
+  box.append(txt("Note", "grey s13"));
+  const note = h("textarea", { placeholder: "e.g. different gym, machine taken …", rows: 2 });
+  note.value = w.note;
+  note.addEventListener("input", () => { w.note = note.value; saveSoon(); });
+  box.append(note);
+}
+
+function entryCard(w, e, idx) {
+  const c = h("div", { class: "card" });
+  const lastE = last(e.n, w);
+  const flatLast = lastE ? Notation.flat(lastE[1].b) : [];
+
+  // Header: ✓  Name  ↑ ↓ ⋮
+  c.append(h("div", { class: "row" },
+    h("div", { class: "b link", style: `font-size:22px;padding-right:12px;color:${e.done ? C.green : C.grey}`,
+      onclick: () => { hideKb(); e.done = !e.done; saveSoon(); render(); } }, e.done ? "✓" : "○"),
+    h("div", { class: "grow b s17 link", style: `color:${e.done ? C.grey : C.white}`, onclick: () => historySheet(e.n, w) }, e.n),
+    icon("↑", () => move(w, idx, -1)), icon("↓", () => move(w, idx, 1)), icon("⋮", () => entryMenu(w, e))));
+
+  // Last time
+  c.append(txt(lastE ? `Last time · ${shortDate(lastE[0].date)}:\n${Notation.format(lastE[1].b)}` : "Last time: no entry yet",
+    (lastE ? "grey" : "dim") + " s14 pre", "padding-top:6px"));
+
+  // Strongest session (heaviest weight, most reps) + following sets
+  const bst = best(e.n, w);
+  if (bst) {
+    const sameAsLast = lastE && bst[0].id === lastE[0].id;
+    c.append(txt(sameAsLast ? "Strongest: = last time" : `Strongest · ${shortDate(bst[0].date)}:\n${Notation.format(bst[1])}`,
+      "grey s14 pre", "padding-top:4px"));
+  }
+
+  // Today
+  const now = h("div", { class: "b s17", style: "padding-top:6px" });
+  function showNow() {
+    const s = Notation.format(e.b);
+    now.textContent = s || "–";
+    now.style.color = !s ? C.dim : e.done ? C.grey : C.white;
+  }
+  showNow();
+  let pressT = null;
+  now.addEventListener("touchstart", () => { pressT = setTimeout(() => editTextSheet(e), 550); }, { passive: true });
+  ["touchend", "touchmove", "touchcancel"].forEach(ev => now.addEventListener(ev, () => clearTimeout(pressT), { passive: true }));
+  now.addEventListener("contextmenu", ev => { ev.preventDefault(); editTextSheet(e); });
+  c.append(now);
+
+  if (e.done) return c;
+
+  // Input: [kg] [reps] [+ Set] [↶]
+  const wIn = h("input", { placeholder: "kg", inputmode: "decimal", enterkeyhint: "next", autocomplete: "off" });
+  const rIn = h("input", { placeholder: "Reps", inputmode: "tel", enterkeyhint: "done", autocomplete: "off" });
+  const lb0 = e.b[e.b.length - 1];
+  if (lb0 && lb0.w != null) wIn.value = Notation.fmtW(lb0.w);
+
+  // Older sessions as fallback if a weight didn't appear last time
+  let olderFlatsCache = null;
+  const olderFlats = () => olderFlatsCache || (olderFlatsCache = history(e.n, w, 10).slice(1).map(x => Notation.flat(x[1].b)));
+
+  /** Next set from last time – matched via the weight of the latest set done,
+   *  so a skipped warm-up set doesn't shift everything. */
+  function nextRef() {
+    const dn = Notation.flat(e.b);
+    if (!dn.length) return flatLast[0] || null;
+    const lw = dn[dn.length - 1][0];
+    const k = dn.filter(x => x[0] === lw).length;
+    const idxs = flatLast.map((x, i) => x[0] === lw ? i : -1).filter(i => i >= 0);
+    if (!idxs.length) return flatLast[dn.length] || null;
+    return flatLast[(k - 1 < idxs.length ? idxs[k - 1] : idxs[idxs.length - 1]) + 1] || null;
+  }
+  /** Sets at the same weight from last time (otherwise from the latest older session that had it). */
+  function refReps(wt) {
+    const at = f => f.filter(x => x[0] === wt).map(x => x[1]);
+    const a = at(flatLast);
+    if (a.length) return a;
+    for (const f of olderFlats()) { const b = at(f); if (b.length) return b; }
+    return [];
+  }
+  /** Reps still missing today at this weight to match last time (null = nothing to compare). */
+  function remaining(wt) {
+    const ref = refReps(wt); if (!ref.length) return null;
+    const dn = Notation.flat(e.b).filter(x => x[0] === wt).reduce((s, x) => s + allReps(x[1]), 0);
+    return ref.reduce((s, r) => s + allReps(r), 0) - dn;
+  }
+  /** Value for an empty field: n-th set from last time at this weight, at most what's left to match. */
+  function repsFor(wt) {
+    const ref = refReps(wt); if (!ref.length) return null;
+    const k = Notation.flat(e.b).filter(x => x[0] === wt).length;
+    const per = ref[k] != null ? ref[k] : ref[ref.length - 1];
+    const rest = remaining(wt);
+    if (rest == null) return per;
+    return rest >= 1 && rest < allReps(per) ? String(rest) : per;
+  }
+  /** Weight from the field, otherwise the grey suggestion. Invalid input → { err }. */
+  function typedW() {
+    const t = wIn.value.replace(",", ".").trim();
+    if (!t) { const n = nextRef(); return { w: n ? n[0] : null }; }
+    const v = Number(t);
+    return isNaN(v) ? { err: true } : { w: v };
+  }
+  function hints() {
+    const n = nextRef();
+    wIn.placeholder = n && n[0] != null ? `${Notation.fmtW(n[0])} kg` : "kg";
+    let rh = null;
+    const tw = typedW();
+    if (!tw.err) {
+      const ref = refReps(tw.w);
+      if (ref.length) {
+        // First set at this weight: show last time's first set, then what's left to match
+        if (!Notation.flat(e.b).some(x => x[0] === tw.w)) rh = `${ref[0]} reps`;
+        else {
+          const rest = remaining(tw.w);
+          if (rest != null) rh = rest > 0 ? `${rest} to go` : `✓ ${rest < 0 ? "+" + (-rest) : "="}`;
+        }
+      }
+    }
+    rIn.placeholder = rh || "Reps";
+  }
+  hints();
+  wIn.addEventListener("input", hints);
+
+  function addSet() {
+    const tw = typedW();
+    if (tw.err) { toast("Invalid weight"); return; }
+    let reps = rIn.value.replace(/\s/g, "");
+    if (!reps) reps = repsFor(tw.w) || "";
+    if (!reps) { rIn.focus(); return; }
+    if (!Notation.repRx.test(reps)) { toast("Reps e.g. 12 or 8+1"); return; }
+    const lb = e.b[e.b.length - 1];
+    if (lb && lb.w === tw.w) lb.r.push(reps); else e.b.push({ w: tw.w, r: [reps] });
+    rIn.value = "";
+    showNow(); hints(); saveSoon();
+  }
+  wIn.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rIn.focus(); } });
+  rIn.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addSet(); } });
+
+  c.append(h("div", { class: "row", style: "padding-top:10px;gap:8px" },
+    h("div", { class: "grow" }, wIn), h("div", { class: "grow" }, rIn),
+    // mousedown/preventDefault keeps the keyboard open on tap
+    h("div", { class: "btn", style: `background:${C.blue};flex:none`, onmousedown: ev => ev.preventDefault(), onclick: addSet }, "+ Set"),
+    h("div", { class: "icon", style: "padding:4px 2px 4px 4px", onmousedown: ev => ev.preventDefault(), onclick: () => {
+      const lb = e.b[e.b.length - 1]; if (!lb) return;
+      lb.r.pop(); if (!lb.r.length) e.b.pop();
+      showNow(); hints(); saveSoon();
+    } }, "↶")));
+  c.append(txt("Grey: kg from last time · first set, then the reps still missing at that weight to match last time · empty field = last time's set · long-press the result = edit as text",
+    "dim s11", "padding-top:6px"));
+  return c;
+}
+
+function move(w, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= w.e.length) return;
+  hideKb();
+  [w.e[i], w.e[j]] = [w.e[j], w.e[i]];
+  saveSoon(); render();
+}
+
+function entryMenu(w, e) {
+  openSheet({ title: e.n, items: [
+    ["History of this exercise", () => historySheet(e.n, w)],
+    ["Edit as text", () => editTextSheet(e)],
+    ["Rename", () => nameSheet("Rename", e.n, v => { e.n = v; saveSoon(); render(); })],
+    ["Remove from this workout", () => confirmSheet(`Remove ${e.n}?`, () => { w.e.splice(w.e.indexOf(e), 1); saveSoon(); render(); })],
+  ] });
+}
+
+function editTextSheet(e) {
+  const inp = h("input", { placeholder: "20×12 // 80×12 // 120×12 / 10 / 8+1", autocapitalize: "off", autocorrect: "off", spellcheck: "false" });
+  inp.value = Notation.format(e.b);
+  openSheet({ title: e.n,
+    message: "// = new weight, / = another set, × (or x) separates weight and reps. Without weight just the reps, e.g. 15 / 15 / 12.",
+    body: inp,
+    buttons: [["Cancel", null], ["Apply", () => {
+      const b = Notation.parse(inp.value);
+      if (!b) toast("Couldn't read that – nothing changed");
+      else { e.b = b; saveSoon(); render(); }
+    }, true]] });
+}
+
+function historySheet(name, cur) {
+  const hs = history(name, null, 30);
+  const body = h("div", {});
+  if (!hs.length) body.append(txt("No entries yet.", "grey"));
+  hs.forEach(([w, e]) => {
+    body.append(h("div", { style: "padding:8px 0;border-bottom:1px solid " + C.line },
+      txt(`${shortDate(w.date)} ${w.date.slice(2, 4)} · ${w.type}${cur && w.id === cur.id ? "  ← this workout" : ""}`, "grey s13"),
+      txt(Notation.format(e.b), "s15")));
+  });
+  openSheet({ title: name, body });
+}
+
+function addExercise(w) {
+  const present = new Set(w.e.map(e => e.n.trim().toLowerCase()));
+  const names = knownNames().filter(n => !present.has(n.toLowerCase()));
+  const dl = h("datalist", { id: "known" }, names.map(n => h("option", { value: n })));
+  const inp = h("input", { placeholder: "Exercise name", autocapitalize: "words", list: "known" });
+  const add = n => { n = n.trim(); if (!n) return; w.e.push({ n, done: false, b: [] }); saveSoon(); render();
+    content.scrollTop = content.scrollHeight; };
+  inp.addEventListener("keydown", ev => { if (ev.key === "Enter") { closeSheet(); add(inp.value); } });
+  const body = h("div", {}, inp, dl);
+  if (names.length) {
+    body.append(txt("Known exercises", "grey s13", "padding:14px 0 4px"));
+    names.forEach(n => body.append(h("div", { class: "item", onclick: () => { closeSheet(); add(n); } }, n)));
+  }
+  openSheet({ title: "Add exercise", body, buttons: [["Cancel", null], ["Add", () => add(inp.value), true]] });
+  setTimeout(() => inp.focus(), 50);
+}
+
+function changeDate(w) {
+  hideKb();
+  pickDate(w.date, nd => {
+    w.date = nd;
+    // nothing logged yet -> exercise list matching the new weekday
+    if (w.type !== "Free" && w.e.every(e => !e.b.length)) {
+      w.e = planNames(w.type, dowOf(parseD(nd))).map(n => ({ n, done: false, b: [] }));
+    }
+    saveSoon(); render();
+  });
+}
+
+function changeType(w) {
+  const empty = w.e.every(e => !e.b.length);
+  openSheet({ title: empty ? "Change day (exercise list will be replaced)" : "Change label",
+    items: [...TYPES, "Free"].map(t => [t, () => {
+      w.type = t;
+      if (empty) w.e = t === "Free" ? [] : planNames(t, dowOf(parseD(w.date))).map(n => ({ n, done: false, b: [] }));
+      saveSoon(); render();
+    }]) });
+}
+
+// ================= Tab: History =================
+function historyTab(box) {
+  box.append(h("h1", { style: "padding-bottom:10px" }, "History"));
+  box.append(h("div", { class: "chips" }, ["All", ...TYPES, "Free"].map(t =>
+    chip(t, t === histFilter, t === "All" ? C.white : typeColor(t), () => { histFilter = t; render(); }))));
+  box.append(space(8));
+
+  const list = sorted().filter(w => histFilter === "All" || w.type === histFilter);
+  if (!list.length) box.append(txt("No workouts yet.", "grey s15"));
+  let month = "";
+  for (const w of list) {
+    const d = parseD(w.date);
+    const m = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    if (m !== month) { month = m; box.append(txt(m, "grey s13 b", "padding:14px 2px 6px")); }
+    const logged = w.e.filter(e => e.b.length);
+    const c = h("div", { class: "card link" },
+      h("div", { class: "row" },
+        h("div", { class: "b s17" }, `${DAY_SHORT[dowOf(d) - 1]} ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`),
+        h("div", { class: "b s17 grow", style: `color:${typeColor(w.type)};padding-left:8px` }, w.type),
+        txt(`${logged.length} exercises`, "grey s13")));
+    if (w.note.trim()) c.append(txt(w.note, "orange s13", "padding-top:4px"));
+    if (!logged.length) c.append(txt("empty", "dim s14", "padding-top:6px"));
+    for (const e of logged) { c.append(txt(e.n, "grey s13", "padding-top:8px")); c.append(txt(Notation.format(e.b), "s15")); }
+    c.addEventListener("click", () => { openId = w.id; tab = 0; render(); });
+    c.append(h("div", { class: "s12 dim", style: "text-align:right;padding-top:6px",
+      onclick: ev => { ev.stopPropagation();
+        confirmSheet(`Delete workout from ${shortDate(w.date)}?`, () => {
+          S.workouts.splice(S.workouts.indexOf(w), 1); if (openId === w.id) openId = null; saveSoon(); render();
+        }); } }, "Delete"));
+    box.append(c);
+  }
+  if (list.length) box.append(txt("Tap = open & edit", "dim s12", "padding-top:8px;text-align:center"));
+}
+
+// ================= Tab: Plan =================
+function planTab(box) {
+  box.append(h("h1", { style: "padding-bottom:10px" }, "Plan"));
+  box.append(txt("Weekly plan (tap to change)", "grey s13 b", "padding-bottom:6px"));
+  const week = card();
+  for (let i = 0; i < 7; i++) {
+    const t = S.schedule[i];
+    week.append(h("div", { class: "row link", style: "padding:6px 0", onclick: () => {
+      const opts = [...TYPES, ""];
+      S.schedule[i] = opts[(opts.indexOf(t) + 1) % opts.length];
+      saveSoon(); render();
+    } }, h("div", { class: "grow" }, DAY_LONG[i]),
+      h("div", { class: "b", style: `color:${t ? typeColor(t) : C.dim}` }, t || "Rest day")));
+  }
+  box.append(week);
+
+  for (const t of TYPES) {
+    const list = S.plans[t] || (S.plans[t] = []);
+    box.append(txt(t, "b s18", `color:${typeColor(t)};padding:18px 0 6px`));
+    const c = card();
+    if (!list.length) c.append(txt("No exercises yet.", "dim s14", "padding:4px 0"));
+    list.forEach((p, i) => {
+      const label = h("div", { class: "grow link", style: "padding:6px 0", onclick: () => planExMenu(t, p) }, txt(p.n));
+      if (p.d.length) label.append(txt("only " + [...p.d].sort().map(x => DAY_SHORT[x - 1]).join(", "), "orange s12"));
+      c.append(h("div", { class: "row" }, label,
+        icon("↑", () => { if (i > 0) { list.splice(i - 1, 0, list.splice(i, 1)[0]); saveSoon(); render(); } }),
+        icon("↓", () => { if (i < list.length - 1) { list.splice(i + 1, 0, list.splice(i, 1)[0]); saveSoon(); render(); } })));
+    });
+    c.append(h("div", { class: "b s15 link", style: `color:${C.blue};padding:10px 0 4px`,
+      onclick: () => nameSheet(`New exercise (${t})`, "", v => { list.push({ n: v, d: [] }); saveSoon(); render(); }) }, "+ Exercise"));
+    box.append(c);
+  }
+
+  // Cloud backup
+  box.append(txt("Cloud backup", "b s18", "padding:22px 0 6px"));
+  const good = cloudOk || cloudStatus.startsWith("Last");
+  box.append(card(
+    txt(cloudStatus, "s14", `color:${good ? C.green : C.orange}`),
+    txt("Your recovery code (tap = copy):", "grey s13", "padding:10px 0 2px"),
+    h("div", { class: "b link", style: "font-size:20px;font-family:ui-monospace,Menlo,monospace",
+      onclick: () => copy(code, "Code copied") }, code),
+    txt("Write it down somewhere outside this phone (e.g. a password manager). With it you get everything back on a new phone or after clearing Safari data. Every change is backed up automatically, plus a daily snapshot for the last 90 days.",
+      "dim s12", "padding-top:6px")));
+  box.append(button("Back up now", C.line, () => { dirty = true; cloudStatus = "Backing up …"; render(); upload(); }));
+  box.append(space(8));
+  box.append(button("Restore with code (new phone)", C.line, restoreFromCode));
+
+  box.append(txt("Also as a file", "b s15", "padding:22px 0 4px"));
+  box.append(txt("Optional: copy the complete data as text (e.g. send it to yourself).", "grey s13", "padding-bottom:8px"));
+  box.append(button("Copy backup", C.line, () => { saveNow(); copy(JSON.stringify(S), "Backup copied"); }));
+  box.append(space(8));
+  box.append(button("Restore backup from text", C.line, restoreFromText));
+}
+
+function planExMenu(type, p) {
+  openSheet({ title: p.n, items: [
+    ["Rename", () => nameSheet("Rename", p.n, v => { p.n = v; saveSoon(); render(); })],
+    ["Only on certain days…", () => {
+      const sel = new Set(p.d);
+      const body = h("div", {}, DAY_LONG.map((dn, i) => {
+        const row = h("div", { class: "item row" }, h("div", { class: "grow" }, dn), h("div", { class: "b green" }, sel.has(i + 1) ? "✓" : ""));
+        row.addEventListener("click", () => {
+          sel.has(i + 1) ? sel.delete(i + 1) : sel.add(i + 1);
+          row.lastChild.textContent = sel.has(i + 1) ? "✓" : "";
+        });
+        return row;
+      }));
+      openSheet({ title: "Which days? (none = always)", body,
+        buttons: [["Cancel", null], ["OK", () => { p.d = [...sel].sort(); saveSoon(); render(); }, true]] });
+    }],
+    ["Remove from plan", () => confirmSheet(`Remove ${p.n} from ${type}?`, () => {
+      const l = S.plans[type]; l.splice(l.indexOf(p), 1); saveSoon(); render(); })],
+  ] });
+}
+
+function copy(s, msg) {
+  const done = () => toast(msg);
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(done, () => fallbackCopy(s, done));
+  else fallbackCopy(s, done);
+}
+function fallbackCopy(s, done) {
+  const ta = h("textarea", { style: "position:fixed;top:-100px;opacity:0" }); ta.value = s;
+  document.body.append(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) { toast("Copy failed"); } ta.remove();
+}
+
+function restoreFromCode() {
+  const inp = h("input", { placeholder: "XXXX-XXXX-XXXX-XXXX-XXXX", autocapitalize: "characters", autocorrect: "off", spellcheck: "false" });
+  openSheet({ title: "Restore", message: "Enter the code from your old phone. The data on this phone will then be replaced.",
+    body: inp, buttons: [["Cancel", null], ["Load", () => {
+      const c = normCode(inp.value);
+      if (c.length < 24) { toast("Code incomplete"); return false; }
+      toast("Loading …");
+      cloudGet(c).then(data => {
+        if (!data) { toast("No backup found for this code"); return; }
+        if (!valid(data)) { toast("Backup unreadable"); return; }
+        confirmSheet(`Found a backup with ${data.workouts.length} workouts. Load it now and replace the data on this phone?`, () => {
+          S = normalize(data); saveNow();
+          code = c; localStorage.setItem(LS_CODE, c);
+          openId = (latestOn(today()) || {}).id || null;
+          cloudOk = true; cloudStatus = "Restored – backing up here from now on";
+          render(); toast("Restored");
+        });
+      }, () => toast("No connection – try again later"));
+    }, true]] });
+  setTimeout(() => inp.focus(), 50);
+}
+
+function restoreFromText() {
+  const ta = h("textarea", { placeholder: "Paste backup text here", rows: 4, autocapitalize: "off", autocorrect: "off", spellcheck: "false" });
+  openSheet({ title: "Restore backup", body: ta, buttons: [["Cancel", null], ["Load", () => {
+    let o; try { o = JSON.parse(ta.value); } catch (_) { o = null; }
+    if (!valid(o)) { toast("That's not a training backup"); return false; }
+    setTimeout(() => confirmSheet(`Load backup with ${o.workouts.length} workouts? The current data will be replaced.`, () => {
+      S = normalize(o); saveNow(); openId = null; uploadSoon(); render(); toast("Restored");
+    }), 0);
+  }, true]] });
+}
+
+// ================= Start =================
+S = load();
+openId = (latestOn(today()) || {}).id || null;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") { clearTimeout(saveT); saveNow(); clearTimeout(upT); upload(true); }
+  else if (dirty) uploadSoon();
+});
+window.addEventListener("pagehide", () => { saveNow(); });
+render();
+uploadSoon();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
