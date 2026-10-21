@@ -78,11 +78,11 @@
 // ================= Settings =================
 const SB_URL = "https://hnavjodrrufagjtxekcv.supabase.co";
 const SB_KEY = "sb_publishable_yaAGPz7MytzEjxG_6snJCg_s11P7Uuo";
-const LS_DATA = "training-gia-data", LS_CODE = "training-gia-code", LS_STATUS = "training-gia-status";
+const LS_DATA = "training-gia-data", LS_CODE = "training-gia-code", LS_STATUS = "training-gia-status", LS_BASE = "training-gia-base";
 
 const TYPES = ["Push", "Pull", "Legs", "Core & Cardio"];
 const C = { bg: "#0F1115", line: "#2A2E38", white: "#FFFFFF", grey: "#8A90A0", dim: "#555B68",
-  blue: "#4F8CFF", green: "#3DDC84", orange: "#FFB454", red: "#FF6B6B", purple: "#C38CFF" };
+  blue: "#4F8CFF", green: "#3DDC84", orange: "#FFB454", red: "#FF6B6B", purple: "#C38CFF", teal: "#2DD4BF" };
 const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -118,8 +118,48 @@ const Notation = {
   flat(blocks) { return blocks.flatMap(b => b.r.map(r => [b.w, r])); },
 };
 
+// ================= Pounds: entered in lb, always stored and compared in kg =================
+const Lb = {
+  toKg: lb => Math.round(lb * 0.45359237 * 10) / 10,          // to 0.1 kg
+  fromKg: kg => Math.round(kg / 0.45359237 * 2) / 2,          // to 0.5 lb (as printed on the weights)
+};
+const isLb = name => (S.lb || []).includes(name.trim().toLowerCase());
+function setLb(name, on) {
+  const k = name.trim().toLowerCase(), l = (S.lb || []).filter(x => x !== k);
+  if (on) l.push(k);
+  l.sort();
+  if (l.length) S.lb = l; else delete S.lb;
+}
+
+// ================= Treadmill run: sections with level + minutes =================
+const RunFmt = {
+  lvl: v => Notation.fmtW(v),
+  /** minutes as 10 or 10:30 */
+  min(m) { const sec = Math.round(m * 60); return sec % 60 === 0 ? String(sec / 60) : `${Math.floor(sec / 60)}:${pad(sec % 60)}`; },
+  /** "10", "10.5" or "10:30" -> minutes */
+  parseMin(s) {
+    const t = s.trim().replace(",", ".");
+    if (!t) return null;
+    if (t.includes(":")) {
+      const [a, b] = t.split(":", 2);
+      const mm = a ? Number(a) : 0, ss = Number(b);
+      if (!Number.isInteger(mm) || !Number.isInteger(ss) || ss < 0 || ss > 59 || b === "") return null;
+      return mm + ss / 60;
+    }
+    const v = Number(t); return isNaN(v) || v < 0 ? null : v;
+  },
+  parseLvl(s) { const t = s.trim().replace(",", "."); if (!t) return null; const v = Number(t); return isNaN(v) ? null : v; },
+  /** "6 · 10 min → 8 · 15 min → 6 · 5 min" */
+  format: r => r.abschnitte.filter(filled).map(a =>
+    `${a.stufe != null ? RunFmt.lvl(a.stufe) : "?"} · ${a.min != null ? RunFmt.min(a.min) : "?"} min`).join(" → "),
+};
+const filled = a => a.stufe != null || a.min != null;
+const runTotal = r => r.abschnitte.reduce((s, a) => s + (a.min || 0), 0);
+const runEmpty = r => !r.abschnitte.some(filled) && !r.note.trim();
+
 // ================= Data =================
-let S; // { v, schedule[7], plans{type:[{n,d[]}]}, workouts[{id,date,type,note,created,e[{n,done,b[{w,r[]}]}]}] }
+let S; // { v, schedule[7], plans{type:[{n,d[]}]}, workouts[{id,date,type,note,created,e[{n,done,b[{w,r[]}]}]}],
+       //   runs[{id,date,created,note,rpe?,schmerz?,abschnitte[{stufe?,min?}]}], lb?[exercise names in lower case] }
 
 function defaults() {
   return {
@@ -128,6 +168,7 @@ function defaults() {
     schedule: ["", "Legs", "Push", "Pull", "Legs", "Core & Cardio", ""],
     plans: { "Push": [], "Pull": [], "Legs": [], "Core & Cardio": [] },
     workouts: [],
+    runs: [],
   };
 }
 
@@ -142,6 +183,14 @@ function normalize(o) {
   }
   for (const t of Object.keys(o.plans)) o.plans[t] = o.plans[t].map(p => ({ n: p.n, d: p.d || [] }));
   for (const t of TYPES) if (!o.plans[t]) o.plans[t] = [];
+  o.runs = (o.runs || []).map(r => {
+    const x = { id: r.id, date: r.date, created: r.created || 0, note: r.note || "",
+      abschnitte: (r.abschnitte || []).map(a => { const y = {}; if (a.stufe != null) y.stufe = +a.stufe; if (a.min != null) y.min = +a.min; return y; }) };
+    if (r.rpe != null) x.rpe = +r.rpe;
+    if (r.schmerz) x.schmerz = true;
+    return x;
+  });
+  if (Array.isArray(o.lb) && o.lb.length) o.lb = [...new Set(o.lb.map(x => String(x).trim().toLowerCase()))].sort(); else delete o.lb;
   while (o.schedule.length < 7) o.schedule.push("");
   o.v = 1;
   return o;
@@ -172,6 +221,14 @@ function sorted() {
   return [...S.workouts].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : b.created - a.created);
 }
 const latestOn = date => sorted().find(w => w.date === date);
+const runById = id => S.runs.find(r => r.id === id);
+function sortedRuns() {
+  return [...S.runs].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : b.created - a.created);
+}
+const runOn = date => sortedRuns().find(r => r.date === date);
+/** Latest run before cur that has something logged */
+const lastRun = cur => sortedRuns().find(r => r.abschnitte.some(filled) &&
+  (!cur || (r.id !== cur.id && (r.date < cur.date || (r.date === cur.date && r.created < cur.created))))) || null;
 function planNames(type, dow) {
   return (S.plans[type] || []).filter(p => !p.d.length || p.d.includes(dow)).map(p => p.n);
 }
@@ -255,22 +312,105 @@ async function rpc(fn, body, keepalive) {
   return t;
 }
 function uploadSoon() { dirty = true; clearTimeout(upT); upT = setTimeout(upload, 3000); }
+
+// ---------- Merge phone <-> Supabase instead of overwriting (three-way merge, same as the Android app) ----------
+// base = state that was last the same on this phone AND in the cloud (kept in localStorage)
+// Per part: changed only here -> here; changed only in the cloud -> cloud; same spot changed differently on both -> cloud wins.
+// Lists with "id" (or "date") are merged entry by entry, objects field by field.
+const Sync = {
+  canon(v) {
+    if (v === undefined) return "∅";
+    if (v === null) return "null";
+    if (Array.isArray(v)) return "[" + v.map(Sync.canon).join(",") + "]";
+    if (typeof v === "object") return "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + Sync.canon(v[k])).join(",") + "}";
+    return typeof v === "number" ? String(v) : JSON.stringify(v);
+  },
+  same: (a, b) => Sync.canon(a) === Sync.canon(b),
+  isObj: v => v !== null && typeof v === "object" && !Array.isArray(v),
+  /** Result of the merge; undefined = part is deleted. */
+  merge(base, local, cloud) {
+    const cl = Sync.canon(local), cc = Sync.canon(cloud);
+    if (cl === cc) return cloud;
+    const cb = Sync.canon(base);
+    if (cl === cb) return cloud;     // only the cloud changed
+    if (cc === cb) return local;     // only this phone changed
+    if (Sync.isObj(local) && Sync.isObj(cloud)) {
+      const b = Sync.isObj(base) ? base : {}, out = {};
+      for (const k of new Set([...Object.keys(local), ...Object.keys(cloud)])) {
+        const m = Sync.merge(b[k], local[k], cloud[k]);
+        if (m !== undefined) out[k] = m;
+      }
+      return out;
+    }
+    if (Array.isArray(local) && Array.isArray(cloud)) {
+      const arrs = [Array.isArray(base) ? base : null, local, cloud].filter(Boolean);
+      const key = Sync.keyField(arrs);
+      if (key) return Sync.mergeList(Array.isArray(base) ? base : [], local, cloud, key);
+    }
+    return cloud;
+  },
+  keyField(arrs) {
+    const items = arrs.flat();
+    if (!items.length || items.some(x => !Sync.isObj(x))) return null;
+    for (const k of ["id", "date"]) {
+      if (items.every(x => k in x) && arrs.every(a => new Set(a.map(x => String(x[k]))).size === a.length)) return k;
+    }
+    return null;
+  },
+  mergeList(base, local, cloud, key) {
+    const index = a => new Map(a.map(x => [String(x[key]), x]));
+    const b = index(base), l = index(local), c = index(cloud);
+    // order: if this phone reordered, its order wins, otherwise the cloud's
+    const primary = Sync.same([...l.keys()], [...b.keys()]) ? [...c.keys()] : [...l.keys()];
+    const out = [];
+    for (const k of new Set([...primary, ...c.keys(), ...l.keys()])) {
+      const m = Sync.merge(b.get(k), l.get(k), c.get(k));
+      if (m !== undefined) out.push(m);
+    }
+    return out;
+  },
+};
+function readBase() { try { return JSON.parse(localStorage.getItem(LS_BASE) || "null"); } catch (_) { return null; } }
+function writeBase(o) { try { localStorage.setItem(LS_BASE, JSON.stringify(o)); } catch (_) {} }
+
+let syncing = false, syncAgain = false;
+/** Fetch the cloud state first, merge, take over changes made elsewhere, then upload – only if something differs. */
 async function upload(keepalive) {
-  if (!dirty) return;
-  dirty = false;
-  const c = code, data = JSON.parse(JSON.stringify(S));
+  if (syncing) { syncAgain = true; return; }
+  syncing = true; dirty = false;
+  const c = code;
+  let ok = false;
   try {
-    await rpc("put_training_gia", { p_code: c, p_data: data }, keepalive);
-    cloudOk = true;
+    const cloud = await cloudGet(c);
+    if (cloud && c === code && valid(cloud)) {
+      const local = JSON.parse(JSON.stringify(S));
+      const merged = Sync.merge(readBase(), local, cloud);
+      if (valid(merged) && !Sync.same(merged, local)) {
+        S = normalize(merged); saveNow();
+        if (openId && !byId(openId)) openId = null;
+        if (openRunId && !runById(openRunId)) openRunId = null;
+        render();
+        toast("Changes from the cloud applied");
+      }
+    }
+    const data = JSON.parse(JSON.stringify(S));
+    if (!(cloud && Sync.same(data, cloud))) await rpc("put_training_gia", { p_code: c, p_data: data }, keepalive);
+    writeBase(data);
+    ok = true;
+  } catch (e) { ok = false; }
+  syncing = false;
+  cloudOk = ok;
+  if (ok) {
     const n = new Date();
     cloudStatus = `Backed up today ${pad(n.getHours())}:${pad(n.getMinutes())}`;
     localStorage.setItem(LS_STATUS, `Last backup ${shortDate(today())} ${pad(n.getHours())}:${pad(n.getMinutes())}`);
-  } catch (e) {
-    dirty = true; cloudOk = false;
+  } else {
+    dirty = true;
     cloudStatus = "Not backed up (no internet?) – will retry automatically";
     clearTimeout(upT); upT = setTimeout(upload, 60000);
   }
   if (tab === 2) render();
+  if (syncAgain) { syncAgain = false; upload(); }
 }
 async function cloudGet(c) {
   const a = JSON.parse((await rpc("get_training_gia", { p_code: c })) || "[]");
@@ -310,7 +450,7 @@ function chip(label, on, color, onclick) {
   return h("div", { class: "chip", onclick,
     style: on ? `background:${color};color:${C.bg};border-color:${color}` : `color:${color}` }, label);
 }
-const typeColor = t => ({ "Push": C.blue, "Pull": C.green, "Legs": C.orange, "Core & Cardio": C.purple })[t] || C.grey;
+const typeColor = t => ({ "Push": C.blue, "Pull": C.green, "Legs": C.orange, "Core & Cardio": C.purple, "Run": C.teal })[t] || C.grey;
 const card = (...kids) => h("div", { class: "card" }, ...kids);
 function toast(s) {
   const t = document.getElementById("toast");
@@ -355,7 +495,7 @@ function pickDate(initial, onPick, title) {
 
 // ================= Shell =================
 let tab = 0;           // 0 Workout, 1 History, 2 Plan
-let openId = null, startType = null, histFilter = "All", renderedTab = -1;
+let openId = null, openRunId = null, startType = null, histFilter = "All", renderedTab = -1;
 const content = document.getElementById("content"), tabs = document.getElementById("tabs");
 
 function render() {
@@ -373,6 +513,9 @@ function render() {
 
 // ================= Tab: Workout =================
 function workoutTab(box) {
+  const r = openRunId && runById(openRunId);
+  if (r) { runView(box, r); return; }
+  openRunId = null;
   const w = openId && byId(openId);
   if (!w) { openId = null; startView(box); } else workoutView(box, w);
 }
@@ -416,6 +559,8 @@ function startView(box) {
     box.append(space(8));
     box.append(button(`Reopen today's workout (${todayW.type})`, C.line, () => { openId = todayW.id; render(); }));
   }
+  box.append(space(16));
+  box.append(runSection(iso(d)));
   box.append(space(8));
   const y = new Date(d); y.setDate(y.getDate() - 1);
   box.append(button("Log a past workout", C.line, () => pickDate(iso(y), pd => {
@@ -446,6 +591,115 @@ function workoutView(box, w) {
   note.value = w.note;
   note.addEventListener("input", () => { w.note = note.value; saveSoon(); });
   box.append(note);
+  box.append(space(18));
+  box.append(runSection(w.date));
+}
+
+// ================= Treadmill run =================
+/** Card "run on this day": existing run (tap = open) or a button to log one. */
+function runSection(date) {
+  const r = runOn(date);
+  if (r && !runEmpty(r)) {
+    return h("div", { class: "card link", onclick: () => { hideKb(); openRunId = r.id; tab = 0; render(); } },
+      h("div", { class: "row" }, h("div", { class: "b s17 grow", style: `color:${C.teal}` }, "🏃 Run"),
+        h("div", { class: "b s15" }, `${RunFmt.min(runTotal(r))} min`)),
+      txt(RunFmt.format(r) || "nothing logged yet", "grey s14", "padding-top:4px"));
+  }
+  return button(date === today() ? "🏃 Log a run (treadmill)" : "🏃 Log a run on this day", C.line, () => { hideKb(); startRun(date); });
+}
+
+function startRun(date) {
+  const ex = runOn(date);
+  if (ex) { openRunId = ex.id; tab = 0; render(); return; }
+  const l = lastRun(null);
+  const n = (l && l.abschnitte.filter(filled).length) || 3;
+  const r = { id: uuid(), date, created: Date.now(), note: "", abschnitte: Array.from({ length: n }, () => ({})) };
+  S.runs.push(r);
+  openRunId = r.id; tab = 0;
+  saveSoon(); render();
+}
+
+function closeRun(r) {
+  hideKb();
+  if (runEmpty(r)) { S.runs.splice(S.runs.indexOf(r), 1); saveSoon(); }
+  openRunId = null; render();
+}
+
+function runView(box, r) {
+  const d = parseD(r.date);
+  box.append(h("div", { class: "row" },
+    h("div", { class: "h22 grow link", onclick: () => pickDate(r.date, nd => { r.date = nd; saveSoon(); render(); }, "Change date") }, longDate(d)),
+    h("div", { class: "grey s14 link", style: "padding:8px 0 8px 12px", onclick: () => closeRun(r) }, "Close")));
+  const sub = h("div", { class: "row", style: "padding:8px 0 10px;gap:4px" }, chip("🏃 Run · Treadmill", true, C.teal, null));
+  if (r.date !== today()) sub.append(txt("Logged later", "orange s13", "padding-left:4px"));
+  box.append(sub);
+
+  const l = lastRun(r);
+  if (l) box.append(txt(`Last run · ${shortDate(l.date)} · ${RunFmt.min(runTotal(l))} min:\n${RunFmt.format(l)}`, "grey s14 pre", "padding-bottom:10px"));
+  const lastSegs = l ? l.abschnitte.filter(filled) : [];
+
+  const totalT = h("div", { class: "b s17", style: "padding-top:8px" });
+  const showTotal = () => { const t = runTotal(r); totalT.textContent = t > 0 ? `Total ${RunFmt.min(t)} min` : "Total –"; };
+
+  const c = card(h("div", { class: "row grey s13", style: "padding-bottom:4px;gap:8px" },
+    h("div", { style: "width:22px" }), h("div", { class: "grow" }, "Level"), h("div", { class: "grow" }, "Minutes"), h("div", { style: "width:30px" })));
+  r.abschnitte.forEach((a, i) => {
+    const ref = lastSegs[i];
+    const lIn = h("input", { inputmode: "decimal", autocomplete: "off", style: "text-align:center",
+      placeholder: ref && ref.stufe != null ? RunFmt.lvl(ref.stufe) : "e.g. 6.5" });
+    if (a.stufe != null) lIn.value = RunFmt.lvl(a.stufe);
+    lIn.addEventListener("input", () => { const v = RunFmt.parseLvl(lIn.value); if (v == null) delete a.stufe; else a.stufe = v; saveSoon(); });
+    const mIn = h("input", { inputmode: "decimal", autocomplete: "off", style: "text-align:center",
+      placeholder: ref && ref.min != null ? RunFmt.min(ref.min) : "min" });
+    if (a.min != null) mIn.value = RunFmt.min(a.min);
+    mIn.addEventListener("input", () => { const v = RunFmt.parseMin(mIn.value); if (v == null) delete a.min; else a.min = v; showTotal(); saveSoon(); });
+    c.append(h("div", { class: "row", style: "padding:4px 0;gap:8px" },
+      h("div", { class: "b s15 grey", style: "width:22px" }, `${i + 1}.`),
+      h("div", { class: "grow" }, lIn), h("div", { class: "grow" }, mIn),
+      h("div", { class: "icon dim", style: "width:30px;padding:4px 0;text-align:center",
+        onclick: () => { hideKb(); r.abschnitte.splice(r.abschnitte.indexOf(a), 1); saveSoon(); render(); } }, "✕")));
+  });
+  c.append(h("div", { class: "b s15 link", style: `color:${C.blue};padding:10px 0 4px`,
+    onclick: () => { hideKb(); r.abschnitte.push({}); saveSoon(); render(); } }, "+ Section"));
+  showTotal();
+  c.append(totalT);
+  c.append(txt("Grey = values from your last run · minutes as 10, 10.5 or 10:30", "dim s11", "padding-top:6px"));
+  box.append(c);
+
+  if (lastSegs.length && !r.abschnitte.some(filled)) {
+    box.append(button("Same as last time", C.line, () => {
+      hideKb(); r.abschnitte = lastSegs.map(a => ({ ...a })); saveSoon(); render();
+    }));
+    box.append(space(10));
+  }
+
+  box.append(txt("How hard was it?", "grey s13"));
+  for (let row = 0; row < 2; row++) {
+    const rr = h("div", { class: "row", style: "padding-top:6px;gap:6px" });
+    for (let k = 1; k <= 5; k++) {
+      const n = row * 5 + k, on = r.rpe === n;
+      rr.append(h("div", { class: "grow b s15 link",
+        style: `text-align:center;padding:9px 0;border-radius:8px;${on ? `background:${C.teal};color:${C.bg}` : `border:1px solid ${C.line}`}`,
+        onclick: () => { hideKb(); if (r.rpe === n) delete r.rpe; else r.rpe = n; saveSoon(); render(); } }, String(n)));
+    }
+    box.append(rr);
+  }
+  box.append(txt("1–3 easy, you can talk · 4–6 moderate · 7–8 hard · 9–10 all out", "dim s11", "padding-top:4px"));
+  box.append(h("div", { class: "s15 link", style: `padding:12px 0;color:${r.schmerz ? C.red : C.white}`,
+    onclick: () => { hideKb(); if (r.schmerz) delete r.schmerz; else r.schmerz = true; saveSoon(); render(); } },
+    (r.schmerz ? "☑" : "☐") + " Pain / discomfort"));
+
+  box.append(txt("Note", "grey s13"));
+  const note = h("textarea", { placeholder: "e.g. incline, heart rate, how it went …", rows: 2 });
+  note.value = r.note;
+  note.addEventListener("input", () => { r.note = note.value; saveSoon(); });
+  box.append(note);
+  box.append(space(14));
+  box.append(button("Done", C.teal, () => closeRun(r)));
+  box.append(space(8));
+  box.append(button("Delete run", C.line, () => confirmSheet(`Delete run from ${shortDate(r.date)}?`, () => {
+    S.runs.splice(S.runs.indexOf(r), 1); openRunId = null; saveSoon(); render();
+  })));
 }
 
 function entryCard(w, e, idx) {
@@ -491,8 +745,12 @@ function entryCard(w, e, idx) {
   // Input: [kg] [reps] [+ Set] [↶]
   const wIn = h("input", { placeholder: "kg", inputmode: "decimal", enterkeyhint: "next", autocomplete: "off" });
   const rIn = h("input", { placeholder: "Reps", inputmode: "tel", enterkeyhint: "done", autocomplete: "off" });
+  // lb mode: weight typed in pounds, stored in kg
+  let lb = isLb(e.n);
+  const shown = kg => Notation.fmtW(lb ? Lb.fromKg(kg) : kg);
   const lb0 = e.b[e.b.length - 1];
-  if (lb0 && lb0.w != null) wIn.value = Notation.fmtW(lb0.w);
+  if (lb0 && lb0.w != null) wIn.value = shown(lb0.w);
+  const conv = h("div", { class: "s13", style: `color:${C.teal};padding-top:4px;display:none` });
 
   // Older sessions as fallback if a weight didn't appear last time
   let olderFlatsCache = null;
@@ -532,16 +790,19 @@ function entryCard(w, e, idx) {
     if (rest == null) return per;
     return rest >= 1 && rest < allReps(per) ? String(rest) : per;
   }
-  /** Weight from the field, otherwise the grey suggestion. Invalid input → { err }. */
+  /** Weight in kg from the field (converted in lb mode), otherwise the grey suggestion. Invalid input → { err }. */
   function typedW() {
     const t = wIn.value.replace(",", ".").trim();
     if (!t) { const n = nextRef(); return { w: n ? n[0] : null }; }
     const v = Number(t);
-    return isNaN(v) ? { err: true } : { w: v };
+    return isNaN(v) ? { err: true } : { w: lb ? Lb.toKg(v) : v };
   }
   function hints() {
-    const n = nextRef();
-    wIn.placeholder = n && n[0] != null ? `${Notation.fmtW(n[0])} kg` : "kg";
+    const n = nextRef(), u = lb ? "lb" : "kg";
+    wIn.placeholder = n && n[0] != null ? `${shown(n[0])} ${u}` : u;
+    const cw = typedW();
+    conv.textContent = !cw.err && cw.w != null ? `= ${Notation.fmtW(cw.w)} kg` : "";
+    conv.style.display = lb && conv.textContent ? "block" : "none";
     let rh = null;
     const tw = typedW();
     if (!tw.err) {
@@ -575,8 +836,21 @@ function entryCard(w, e, idx) {
   wIn.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); rIn.focus(); } });
   rIn.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); addSet(); } });
 
+  // kg ⇄ lb: remembered per exercise; a number already typed is converted along
+  const unitBtn = h("div", { class: "b s15 link", style: "flex:none;padding:10px 2px;min-width:26px;text-align:center",
+    onmousedown: ev => ev.preventDefault() });
+  const showUnit = () => { unitBtn.textContent = lb ? "lb" : "kg"; unitBtn.style.color = lb ? C.teal : C.grey; };
+  showUnit();
+  unitBtn.addEventListener("click", () => {
+    const cur = Number(wIn.value.replace(",", ".").trim());
+    const kg = wIn.value.trim() && !isNaN(cur) ? (lb ? Lb.toKg(cur) : cur) : null;
+    lb = !lb; setLb(e.n, lb);
+    if (kg != null) wIn.value = shown(kg);
+    showUnit(); hints(); saveSoon();
+  });
+
   c.append(h("div", { class: "row", style: "padding-top:10px;gap:8px" },
-    h("div", { class: "grow" }, wIn), h("div", { class: "grow" }, rIn),
+    h("div", { class: "grow" }, wIn), unitBtn, h("div", { class: "grow" }, rIn),
     // mousedown/preventDefault keeps the keyboard open on tap
     h("div", { class: "btn", style: `background:${C.blue};flex:none`, onmousedown: ev => ev.preventDefault(), onclick: addSet }, "+ Set"),
     h("div", { class: "icon", style: "padding:4px 2px 4px 4px", onmousedown: ev => ev.preventDefault(), onclick: () => {
@@ -584,7 +858,8 @@ function entryCard(w, e, idx) {
       lb.r.pop(); if (!lb.r.length) e.b.pop();
       showNow(); hints(); saveSoon();
     } }, "↶")));
-  c.append(txt("Grey: kg from last time · first set, then the reps still missing at that weight to match last time · empty field = last time's set · long-press the result = edit as text",
+  c.append(conv);
+  c.append(txt("Tap kg/lb = switch unit for this exercise (always saved in kg) · Grey: weight from last time · first set, then the reps still missing at that weight to match last time · empty field = last time's set · long-press the result = edit as text",
     "dim s11", "padding-top:6px"));
   return c;
 }
@@ -601,7 +876,7 @@ function entryMenu(w, e) {
   openSheet({ title: e.n, items: [
     ["History of this exercise", () => historySheet(e.n, w)],
     ["Edit as text", () => editTextSheet(e)],
-    ["Rename", () => nameSheet("Rename", e.n, v => { e.n = v; saveSoon(); render(); })],
+    ["Rename", () => nameSheet("Rename", e.n, v => { if (isLb(e.n)) setLb(v, true); e.n = v; saveSoon(); render(); })],
     ["Remove from this workout", () => confirmSheet(`Remove ${e.n}?`, () => { w.e.splice(w.e.indexOf(e), 1); saveSoon(); render(); })],
   ] });
 }
@@ -673,17 +948,20 @@ function changeType(w) {
 // ================= Tab: History =================
 function historyTab(box) {
   box.append(h("h1", { style: "padding-bottom:10px" }, "History"));
-  box.append(h("div", { class: "chips" }, ["All", ...TYPES, "Free"].map(t =>
+  box.append(h("div", { class: "chips" }, ["All", ...TYPES, "Free", "Run"].map(t =>
     chip(t, t === histFilter, t === "All" ? C.white : typeColor(t), () => { histFilter = t; render(); }))));
   box.append(space(8));
 
-  const list = sorted().filter(w => histFilter === "All" || w.type === histFilter);
+  const ws = histFilter === "Run" ? [] : sorted().filter(w => histFilter === "All" || w.type === histFilter);
+  const rs = histFilter === "All" || histFilter === "Run" ? S.runs.filter(r => !runEmpty(r)).map(r => ({ run: r, date: r.date, created: r.created })) : [];
+  const list = [...ws, ...rs].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : b.created - a.created);
   if (!list.length) box.append(txt("No workouts yet.", "grey s15"));
   let month = "";
   for (const w of list) {
     const d = parseD(w.date);
     const m = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
     if (m !== month) { month = m; box.append(txt(m, "grey s13 b", "padding:14px 2px 6px")); }
+    if (w.run) { box.append(runCard(w.run, d)); continue; }
     const logged = w.e.filter(e => e.b.length);
     const c = h("div", { class: "card link" },
       h("div", { class: "row" },
@@ -693,7 +971,7 @@ function historyTab(box) {
     if (w.note.trim()) c.append(txt(w.note, "orange s13", "padding-top:4px"));
     if (!logged.length) c.append(txt("empty", "dim s14", "padding-top:6px"));
     for (const e of logged) { c.append(txt(e.n, "grey s13", "padding-top:8px")); c.append(txt(Notation.format(e.b), "s15")); }
-    c.addEventListener("click", () => { openId = w.id; tab = 0; render(); });
+    c.addEventListener("click", () => { openId = w.id; openRunId = null; tab = 0; render(); });
     c.append(h("div", { class: "s12 dim", style: "text-align:right;padding-top:6px",
       onclick: ev => { ev.stopPropagation();
         confirmSheet(`Delete workout from ${shortDate(w.date)}?`, () => {
@@ -702,6 +980,26 @@ function historyTab(box) {
     box.append(c);
   }
   if (list.length) box.append(txt("Tap = open & edit", "dim s12", "padding-top:8px;text-align:center"));
+}
+
+function runCard(r, d) {
+  const c = h("div", { class: "card link" },
+    h("div", { class: "row" },
+      h("div", { class: "b s17" }, `${DAY_SHORT[dowOf(d) - 1]} ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`),
+      h("div", { class: "b s17 grow", style: `color:${C.teal};padding-left:8px` }, "Run"),
+      txt(`${RunFmt.min(runTotal(r))} min`, "grey s13")));
+  if (r.note.trim()) c.append(txt(r.note, "orange s13", "padding-top:4px"));
+  if (r.rpe != null || r.schmerz) c.append(txt([r.rpe != null ? `Effort ${r.rpe}/10` : null, r.schmerz ? "Pain / discomfort" : null].filter(Boolean).join(" · "),
+    "s13", `padding-top:4px;color:${r.schmerz ? C.red : C.grey}`));
+  c.append(txt("Treadmill · level · minutes", "grey s13", "padding-top:8px"));
+  c.append(txt(RunFmt.format(r) || "empty", "s15"));
+  c.addEventListener("click", () => { openRunId = r.id; openId = null; tab = 0; render(); });
+  c.append(h("div", { class: "s12 dim", style: "text-align:right;padding-top:6px",
+    onclick: ev => { ev.stopPropagation();
+      confirmSheet(`Delete run from ${shortDate(r.date)}?`, () => {
+        S.runs.splice(S.runs.indexOf(r), 1); if (openRunId === r.id) openRunId = null; saveSoon(); render();
+      }); } }, "Delete"));
+  return c;
 }
 
 // ================= Tab: Plan =================
@@ -800,9 +1098,9 @@ function restoreFromCode() {
         if (!data) { toast("No backup found for this code"); return; }
         if (!valid(data)) { toast("Backup unreadable"); return; }
         confirmSheet(`Found a backup with ${data.workouts.length} workouts. Load it now and replace the data on this phone?`, () => {
-          S = normalize(data); saveNow();
+          S = normalize(data); saveNow(); writeBase(data);
           code = c; localStorage.setItem(LS_CODE, c);
-          openId = (latestOn(today()) || {}).id || null;
+          openId = (latestOn(today()) || {}).id || null; openRunId = null;
           cloudOk = true; cloudStatus = "Restored – backing up here from now on";
           render(); toast("Restored");
         });
@@ -817,7 +1115,7 @@ function restoreFromText() {
     let o; try { o = JSON.parse(ta.value); } catch (_) { o = null; }
     if (!valid(o)) { toast("That's not a training backup"); return false; }
     setTimeout(() => confirmSheet(`Load backup with ${o.workouts.length} workouts? The current data will be replaced.`, () => {
-      S = normalize(o); saveNow(); openId = null; uploadSoon(); render(); toast("Restored");
+      S = normalize(o); saveNow(); openId = null; openRunId = null; uploadSoon(); render(); toast("Restored");
     }), 0);
   }, true]] });
 }
@@ -827,11 +1125,11 @@ S = load();
 openId = (latestOn(today()) || {}).id || null;
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") { clearTimeout(saveT); saveNow(); clearTimeout(upT); upload(true); }
-  else if (dirty) uploadSoon();
+  else { clearTimeout(upT); upload(); }   // on opening: read the cloud first (take over changes made elsewhere)
 });
 window.addEventListener("pagehide", () => { saveNow(); });
 render();
-uploadSoon();
+upload();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
